@@ -1,0 +1,28 @@
+# Binaries
+cpg-gen
+web/cpg-explorer
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Runtime
+.run/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend (covered by web/frontend/.gitignore too)
+web/frontend/node_modules/
+web/frontend/.svelte-kit/
+web/frontend/build/
+web/frontend/test-results/

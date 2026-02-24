@@ -1,0 +1,13 @@
+services:
+  cpg-explorer:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./cpg.db:/data/cpg.db:ro
+    environment:
+      - CPG_DB_PATH=/data/cpg.db
+      - CPG_PORT=8080
+    restart: unless-stopped

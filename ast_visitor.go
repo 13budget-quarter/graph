@@ -1219,10 +1219,7 @@ func (v *astVisitor) visitFieldList(fl *ast.FieldList, kind string) {
 			typeInfo = tv.Type.String()
 			if kind == "parameter" {
 				if isMutableType(tv.Type) {
-					if props == nil {
-						props = map[string]any{}
-					}
-					props["mutable"] = true
+					props = map[string]any{"mutable": true}
 				}
 				if isNilableType(tv.Type) {
 					if props == nil {

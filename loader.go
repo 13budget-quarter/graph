@@ -18,25 +18,51 @@ type LoadResult struct {
 
 // CreateTempGoWork writes a temporary go.work file that includes all modules
 // in the ModuleSet. Returns the path to the temp file (caller must os.Remove).
+//
+// Sub-modules (nested go.mod files) are discovered automatically. When two
+// directories declare the same module path (e.g. alertmanager/internal/tools
+// and prometheus/internal/tools both declare
+// "github.com/prometheus/prometheus/internal/tools"), only the first
+// directory found is included to avoid Go workspace "appears multiple times"
+// errors. First-wins semantics match the module ordering in the ModuleSet.
 func CreateTempGoWork(ms *ModuleSet) (string, error) {
 	var buf strings.Builder
 	buf.WriteString("go 1.25.7\n\nuse (\n")
+
+	// seenModPaths tracks declared module paths → directory to prevent
+	// duplicate module paths in the workspace (which Go rejects).
+	seenModPaths := make(map[string]string)
 
 	// Collect top-level module dirs for dedup against discovered sub-modules.
 	topDirs := make(map[string]bool, len(ms.Dirs()))
 	for _, m := range ms.Dirs() {
 		buf.WriteString("\t" + m.Dir + "\n")
 		topDirs[m.Dir] = true
+		if mp := readModulePath(filepath.Join(m.Dir, "go.mod")); mp != "" {
+			seenModPaths[mp] = m.Dir
+		}
 	}
 
 	// Walk ALL module directories (not just primary) to find nested sub-modules
-	// with their own go.mod. Deduplicate against already-listed top-level dirs.
+	// with their own go.mod. Deduplicate against already-listed top-level dirs
+	// and against already-seen module paths (two different directories can
+	// declare the same module path, e.g. across repos with shared tooling).
 	for _, m := range ms.Dirs() {
 		for _, d := range findSubModules(m.Dir) {
-			if !topDirs[d] {
-				buf.WriteString("\t" + d + "\n")
-				topDirs[d] = true // prevent duplicates across module walks
+			if topDirs[d] {
+				continue
 			}
+			mp := readModulePath(filepath.Join(d, "go.mod"))
+			if mp != "" {
+				if prev, dup := seenModPaths[mp]; dup {
+					// Skip: another directory already provides this module path.
+					_ = prev // could log: "skipping %s (duplicate of %s)", d, prev
+					continue
+				}
+				seenModPaths[mp] = d
+			}
+			buf.WriteString("\t" + d + "\n")
+			topDirs[d] = true // prevent duplicates across module walks
 		}
 	}
 
@@ -56,6 +82,22 @@ func CreateTempGoWork(ms *ModuleSet) (string, error) {
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+// readModulePath reads a go.mod file and returns the declared module path.
+// Returns "" if the file cannot be read or the module directive is not found.
+func readModulePath(gomodPath string) string {
+	data, err := os.ReadFile(gomodPath)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
 }
 
 // findSubModules walks dir looking for directories with go.mod (excluding dir itself).
